@@ -1,0 +1,243 @@
+# Data science with R: A Case Study
+
+# Clear workspace first
+# rm(list = ls())
+
+# pacman is a R package management tool. 
+if (!require("pacman")) install.packages("pacman") 
+
+# A few new packages will be used for the first time: 
+pacman::p_load(
+  caret,           # Predictive analytics
+  GGally,          # Scatterplot matrix
+  magrittr,        # Pipes
+  pacman,          # Load/unload packages
+  parallel,        # Parallel processing
+  randomForest,    # Random Forest
+  rattle,          # Plot decision tree
+  rio,             # Import/Export data
+  tictoc,          # Time operator: provide progress report
+  tidyverse        # This is a must. This includes: ggplot2, dyplr,...
+)
+
+# Import data
+df<-import("data/b5_df.csv") %>% 
+  as_tibble() %>% 
+  mutate(
+    gender=as.factor(gender),
+    engnat=as.factor(engnat)
+  ) %>% 
+  print()
+
+# Dichotomize "Open" variable for outcome
+df %<>% 
+  mutate(
+    open_t=ifelse(
+      Open>=4, "High", "Low"
+    ),
+    open_t=as.factor(open_t)
+  ) %>% 
+print()
+
+# Explore data through visualization
+df %>% 
+  ggplot()+
+  geom_bar(
+    aes(
+      x=open_t,
+      fill=open_t
+    )
+  )
+df %>% 
+  ggplot(aes(x=Open,fill=gender))+
+  geom_boxplot()
+
+# Scaterplot of all the variables 
+tic("Scatterplot matrix")
+df %>% 
+  select(
+    open_t,
+    Open,
+    Extrav:Consc,
+    age:engnat
+  ) %>% 
+  ggpairs()
+toc()
+
+df %>% summary()
+
+# Linear regression on full dataset
+fit.lm<-df %>% 
+  select(
+    Open,
+    Extrav:Consc,
+    age:engnat
+  ) %>% 
+  lm() # Automatically, it will take the first variable (Open) 
+       # as outcome variable and rest as the independent variable.
+
+fit.lm %T>% 
+  summary() %>% 
+  plot()
+
+# Now focus on machine learning approaches
+
+set.seed(22)
+
+# We can take random sample of size 1000 (or more) to save time as 
+# df %<>% sample_n(1000)
+# But here we split the data into train and test data as
+
+train<-df %>% sample_frac(.70)
+test<-df %>% anti_join(train)
+
+# We start with a KNN clustering
+
+# Define parameters
+statctr1<-trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 3
+)
+
+#Define KNN model 
+fit.knn<- train(
+  open_t~age+gender+Extrav+Neurot+Agree+Consc,
+  data=train,
+  method="knn",
+  trControl=statctr1,
+  tuneLength=20,
+  na.action="na.omit"
+)
+
+tic("knn")
+fit.knn
+toc()
+
+# Predict train data
+open_p<-fit.knn %>% 
+  predict(newdata=train)
+
+# Create confusion matrix
+table(
+  actualclass = train$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
+# Predict with test data
+
+open_p<-fit.knn %>% 
+  predict(newdata=test)
+
+# Create confusion matrix
+table(
+  actualclass = test$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
+# Define Decision Tree model 
+fit.dt<- train(
+  open_t~age+gender+Extrav+Neurot+Agree+Consc,
+  data=train,
+  method="rpart",
+  trControl=trainControl(method = "cv")
+)
+fit.dt
+
+# Description of the final model
+fit.dt$finalModel
+
+# Plot training final model
+fit.dt$finalModel %>%
+  fancyRpartPlot(
+    main = "Predicting Open",
+    sub = "Training data"
+  )
+
+# Predict with train data
+
+open_p<-fit.dt %>% 
+  predict(newdata=train)
+
+# Create confusion matrix
+table(
+  actualclass = train$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
+# Predict with test data
+
+open_p<-fit.dt %>% 
+  predict(newdata=test)
+
+# Create confusion matrix
+table(
+  actualclass = test$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
+# Random Forest
+
+# Define parameters
+control<-trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 3,
+  search = "random",
+  allowParallel =TRUE
+)
+
+# Fitting random model forest
+fit.rf<- train(
+  open_t~age+gender+Extrav+Neurot+Agree+Consc,
+  data=train,
+  method="rf",
+  metric = "Accuracy",
+  trControl=control,
+  tuneLength=15,
+  ntree = 300
+)
+
+fit.rf
+
+fit.rf %>% plot()
+
+fit.rf$finalModel
+
+fit.rf$finalModel %>% plot()
+
+
+# Predict with train data
+
+open_p<-fit.rf %>% 
+  predict(newdata=train)
+
+# Create confusion matrix
+table(
+  actualclass = train$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
+# Predict with test data
+
+open_p<-fit.rf %>% 
+  predict(newdata=test)
+
+# Create confusion matrix
+table(
+  actualclass = test$open_t,
+  predictedclass =open_p
+) %>% 
+  confusionMatrix() %>% 
+  print()
+
